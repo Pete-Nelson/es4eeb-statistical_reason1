@@ -1,0 +1,285 @@
+---
+title: "Statistical Reasoning 1"
+author: "Peter Nelson and Abbie Ward"
+format: pdf
+editor: visual
+---
+
+## load libraries
+
+```{r}
+#| results: hide
+#| fig-show: hide
+#| warning: false
+#| message: false
+
+library(brms) # for statistics
+library(tidyverse)
+library(ggeffects) # for the prediction plot
+library(lterdatasampler) # for built-in datasets
+```
+
+Load data
+
+```{r}
+head(pie_crab)
+view(pie_crab)
+```
+
+## 1.1 Plot data, pick the model
+
+```{r}
+pie_crab %>% 
+  ggplot(aes(x = latitude, y = size)) +
+  geom_point() +
+  # Make the y-axis include 0
+  ylim(0, NA)
+```
+
+### Q1.1 Interpret the graph
+
+Seems to be a correlation between size and latitude, consistent with Bergman's Rule. There's a lot of variation at every site, but still there's a pretty solid positive slope. So there are certainly going to be multiple factors affecting regional crab size.
+
+### Q1.2 Beautify this graph
+
+```{r}
+p <-
+  pie_crab %>% 
+  ggplot(aes(x = latitude, y = size)) +
+  geom_point() +
+  # Make the y-axis include 0
+  ylim(0, NA)
+
+p + aes(color = site) + theme_bw()
+```
+
+Now, let's model these data...
+
+\$\$size = intercept + slope\*latitude\$
+
+```{r}
+mod1 <- lm(size ~ latitude, data = pie_crab)
+summary(mod1)
+
+```
+
+## 1.2 Fit linear regression with `brms`
+
+```{r}
+m.crab.lat <- 
+  brm(data = pie_crab, # Give the model the pie_crab data
+      # Choose a gaussian (normal) distribution
+      family = gaussian,
+      # Specify the model here. 
+      size ~ latitude,
+      # Here's where you specify parameters for executing the Markov chains
+      # We're using similar to the defaults, except we set cores to 4 so the analysis runs faster than the default of 1
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      # Setting the "seed" determines which random numbers will get sampled.
+      # In this case, it makes the randomness of the Markov chain runs reproducible 
+      # (so that both of us get the exact same results when running the model)
+      seed = 4,
+      # Save the fitted model object as output - helpful for reloading in the output later
+      file = "output/m.crab.lat")
+```
+
+### Q1.3 What does the "iter" argument do?
+
+Navigate to the `brm` help page to answer: What does the `iter =` argument do?
+
+This term sets the total number of *iterations* per chain, including the warmup.
+
+## 1.3 Assess model
+
+```{r}
+summary(m.crab.lat)
+```
+
+Plot the model output.
+
+```{r}
+plot(m.crab.lat) # show posteriors and chains
+```
+
+```{r}
+summary(m.crab.lat)
+```
+
+Output looks good. Estimate column indicates effect of latitude on crab size. Estimate looks solid and error is small. Based on the credible intervals, too, we have some real confidence that the slope is positive, but let's calculate the probability of slope = 0.
+
+```{r}
+as_draws_df(m.crab.lat)  %>%  # extract the posterior samples from the model estimate
+  select(b_latitude)  %>%  # pull out the latitude samples from all 4 chains. we'll get a warning that we can ignore.
+  summarize(p_slope_lessthanorequalto_zero = sum(b_latitude <= 0)/length(b_latitude))
+```
+
+Great!
+
+## 1.5 Plot model on the data
+
+Start with the compatibility interval:
+
+```{r}
+confm.crab.lat <- predict_response(m.crab.lat)
+plot(confm.crab.lat, show_data = TRUE)
+```
+
+Prediction interval:
+
+```{r}
+confm.crab.lat <- predict_response(m.crab.lat, interval = 'prediction')
+plot(confm.crab.lat, show_data = TRUE)
+```
+
+## 1.6 Repeat with a new variable: water temp sd
+
+Abbie thinks the northern portion of the fiddler crab range (more temperate) is going to experience greater variability in water temperatures. We definitely saw larger crabs at higher latitudes, so...we should see a positive relationship between water temp sd and body size. Peter thought the opposite...and now thinks he's wrong...
+
+```{r}
+p2 <-
+  pie_crab %>% 
+  ggplot(aes(x = water_temp_sd, y = size)) +
+  geom_point() +
+  # Make the y-axis include 0
+  ylim(0, NA)
+
+p2 + aes(color = latitude) + theme_bw()
+```
+
+NOT what we expected! Changing careers now to furniture making...
+
+### Q1.7 Set up and run a model with this new relationship
+
+```{r}
+#| results: hide
+#| fig-show: hide
+#| warning: false
+#| message: false
+m.crab.water.sd <- 
+  brm(data = pie_crab, # Give the model the pie_crab data
+      # Choose a gaussian (normal) distribution
+      family = gaussian,
+      # Specify the model here. 
+      size ~ water_temp_sd,
+      # Here's where you specify parameters for executing the Markov chains
+      # We're using similar to the defaults, except we set cores to 4 so the analysis runs faster than the default of 1
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      # Setting the "seed" determines which random numbers will get sampled.
+      # In this case, it makes the randomness of the Markov chain runs reproducible 
+      # (so that both of us get the exact same results when running the model)
+      seed = 4,
+      # Save the fitted model object as output - helpful for reloading in the output later
+      file = "output/m.crab.water.sd")
+```
+
+### Q1.8 Assess the model
+
+```{r}
+plot(m.crab.water.sd)
+```
+
+The model ran correctly. rhat looks good (=1). Plots look excellent. Unimodal distributions. Chains aren't overlapping.
+
+```{r}
+summary(m.crab.water.sd)
+```
+
+### Q 1.8 Interpret the model
+
+The effect of the predictor shows that 0.1 increase in body size with the standard deviation of the water temperature. But the credible intervals include 0; the effect is not reasonably different from zero. Not surprising considering our plot of the relationship. Also the size of the estimate relative to the error...
+
+## Back to Pikas
+
+Look at the data again.
+
+```{r}
+head(nwt_pikas)
+```
+
+```{r}
+nwt_pikas_doy <- nwt_pikas %>% 
+  # Add a new column called day_of_year
+  # yday extracts the day of year from the date column
+  mutate(day_of_year = yday(date)) %>% 
+  # relocate the day_of_year column after the date column
+  relocate(day_of_year, .after = date)
+
+head(nwt_pikas_doy)
+```
+
+### Q 2.1 Make a question
+
+Let's look at the relationship between stress and elevation.
+
+### Q 2.2 Make a hypothesis
+
+We expect that stress levels will be inversely related to elevation. At lower elevations, perhaps pikas are exposed to greater predation rates.
+
+```{r}
+ggplot(nwt_pikas_doy,
+       aes(x = elev_m, y = concentration_pg_g)) +
+  geom_point()
+  
+```
+
+I have no idea what's going on, so obviously we have to do statistics.
+
+```{r}
+#| results: hide
+#| fig-show: hide
+#| warning: false
+#| message: false
+m.pika.elev <- 
+  brm(data = nwt_pikas_doy, # Give the model the pika data
+      # Choose a gaussian (normal) distribution
+      family = gaussian,
+      # Specify the model here. 
+      concentration_pg_g ~ elev_m,
+      # Here's where you specify parameters for executing the Markov chains
+      # We're using similar to the defaults, except we set cores to 4 so the analysis runs faster than the default of 1
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      # Setting the "seed" determines which random numbers will get sampled.
+      # In this case, it makes the randomness of the Markov chain runs reproducible 
+      # (so that both of us get the exact same results when running the model)
+      seed = 4,
+      # Save the fitted model object as output - helpful for reloading in the output later
+      file = "output/m.pika.elev")
+```
+
+### Q 2.5 Assess the model
+
+```{r}
+summary(m.pika.elev)
+```
+
+rhat looks good (=1), but the CIs do not look good! These include 0 and the error is an order of magnitude greater than the estimate.
+
+```{r}
+plot(m.pika.elev)
+```
+
+Nothing wrong with the model...the data simply aren't cooperating (;-).
+
+### Q 2.6 Interpret the model
+
+Elevation is not a good indicator of stress as shown by our estimate (model results). Our CI values show that the effect is not reasonably different from 0.
+
+### Q 2.7 Plot the model on the data
+
+Compatibility interval:
+
+```{r}
+confm.pika.elev <- predict_response(m.pika.elev)
+plot(confm.pika.elev, show_data = TRUE)
+```
+
+Plot prediction interval:
+
+```{r}
+confm.pika.elev <- predict_response(m.pika.elev, interval = "prediction")
+plot(confm.pika.elev, show_data = TRUE)
+```
+
+### Q 2.8 Results
+
+We found no evidence of a relationship between elevation and stress levels in pikas. The models seemed to run well. The CIs included 0, strongly suggesting that there was no difference from 0. And our estimates were consistently low and the associated errors were high.
